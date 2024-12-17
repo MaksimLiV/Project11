@@ -5,25 +5,19 @@
 //  Created by Maksim Li on 12/12/2024.
 //
 
-//
-//  GameScene.swift
-//  Project11
-//
-//  Created by Maksim Li on 12/12/2024.
-//
-
 import SpriteKit
 
 class GameScene: SKScene, SKPhysicsContactDelegate {
     var scoreLable: SKLabelNode!
+    var editLabel: SKLabelNode!
+    var ballLimit = 5
+    var remainingObstacles = 0
     
     var score = 0 {
         didSet {
             scoreLable.text = "Score: \(score)"
         }
     }
-    
-    var editLabel: SKLabelNode!
     
     var editingMode: Bool = false {
         didSet {
@@ -51,27 +45,26 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         editLabel = SKLabelNode(fontNamed: "Chalkduster")
         editLabel.text = "Edit"
         editLabel.position = CGPoint(x: 80, y: 700)
-        physicsBody = SKPhysicsBody(edgeLoopFrom: frame)
-        physicsWorld.contactDelegate = self
         addChild(editLabel)
         
-        makeSlot(at: CGPoint(x: 128, y:0), isGood: true)
-        makeSlot(at: CGPoint(x: 384, y:0), isGood: false)
-        makeSlot(at: CGPoint(x: 640, y:0), isGood: true)
-        makeSlot(at: CGPoint(x: 896, y:0), isGood: false)
+        physicsBody = SKPhysicsBody(edgeLoopFrom: frame)
+        physicsWorld.contactDelegate = self
         
-        makeBouncer(at: CGPoint (x: 0, y:0))
-        makeBouncer(at: CGPoint (x: 256, y:0))
-        makeBouncer(at: CGPoint (x: 512, y:0))
-        makeBouncer(at: CGPoint (x: 768, y:0))
-        makeBouncer(at: CGPoint (x: 1024, y:0))
+        makeSlot(at: CGPoint(x: 128, y: 0), isGood: true)
+        makeSlot(at: CGPoint(x: 384, y: 0), isGood: false)
+        makeSlot(at: CGPoint(x: 640, y: 0), isGood: true)
+        makeSlot(at: CGPoint(x: 896, y: 0), isGood: false)
         
-        
+        makeBouncer(at: CGPoint(x: 0, y: 0))
+        makeBouncer(at: CGPoint(x: 256, y: 0))
+        makeBouncer(at: CGPoint(x: 512, y: 0))
+        makeBouncer(at: CGPoint(x: 768, y: 0))
+        makeBouncer(at: CGPoint(x: 1024, y: 0))
     }
     
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
-        let location = touch.location(in: self)
+        var location = touch.location(in: self)
         let objects = nodes(at: location)
         
         if objects.contains(editLabel) {
@@ -93,9 +86,24 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
                 
                 box.physicsBody = SKPhysicsBody(rectangleOf: box.size)
                 box.physicsBody?.isDynamic = false
+                box.name = "obstacle"
                 addChild(box)
+                remainingObstacles += 1
             } else {
-                let ball = SKSpriteNode(imageNamed: "ballRed")
+                guard ballLimit > 0 else { return }
+                ballLimit -= 1
+                
+                location.y = CGFloat.random(in: size.height - 100...size.height - 50)
+                
+                let ballColors = [
+                    "ballBlue", "ballCyan", "ballGreen",
+                    "ballGrey", "ballPurple", "ballRed",
+                    "ballYellow"
+                ]
+                
+                let randomBall = ballColors.randomElement() ?? "ballRed"
+                
+                let ball = SKSpriteNode(imageNamed: randomBall)
                 ball.physicsBody = SKPhysicsBody(circleOfRadius: ball.size.width / 2.0)
                 ball.physicsBody?.restitution = 0.4
                 ball.physicsBody?.contactTestBitMask = ball.physicsBody?.collisionBitMask ?? 0
@@ -105,16 +113,16 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             }
         }
     }
+    
     func makeBouncer(at position: CGPoint) {
         let bouncer = SKSpriteNode(imageNamed: "bouncer")
         bouncer.position = position
         bouncer.physicsBody = SKPhysicsBody(circleOfRadius: bouncer.size.width / 2)
         bouncer.physicsBody?.isDynamic = false
         addChild(bouncer)
-        
     }
     
-    func makeSlot(at possition: CGPoint, isGood: Bool) {
+    func makeSlot(at position: CGPoint, isGood: Bool) {
         var slotBase: SKSpriteNode
         var slotGlow: SKSpriteNode
         
@@ -128,8 +136,8 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
             slotBase.name = "bad"
         }
         
-        slotBase.position = possition
-        slotGlow.position = possition
+        slotBase.position = position
+        slotGlow.position = position
         
         slotBase.physicsBody = SKPhysicsBody(rectangleOf: slotBase.size)
         slotBase.physicsBody?.isDynamic = false
@@ -142,21 +150,49 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         slotGlow.run(spinForever)
     }
     
-    func collision (between ball: SKNode, object: SKNode) {
+    func collision(between ball: SKNode, object: SKNode) {
         if object.name == "good" {
             destroy(ball: ball)
             score += 1
         } else if object.name == "bad" {
             destroy(ball: ball)
             score -= 1
+        } else if object.name == "obstacle" {
+            object.removeFromParent()
+            remainingObstacles -= 1
+            checkGameState()
         }
     }
-    func destroy (ball: SKNode) {
+    
+    func destroy(ball: SKNode) {
+        if let fireParticles = SKEmitterNode(fileNamed: "FireParticles") {
+            fireParticles.position = ball.position
+            addChild(fireParticles)
+        }
         ball.removeFromParent()
     }
     
-    func didBegin(_ contact: SKPhysicsContact) {
+    func checkGameState() {
+        if remainingObstacles == 0 {
+            showEndGameMessage(won: true)
+        } else if ballLimit == 0 && remainingObstacles > 0 {
+            showEndGameMessage(won: false)
+        }
+    }
+    
+    func showEndGameMessage(won: Bool) {
+        let message = won ? "You Win!" : "Game Over!"
+        let label = SKLabelNode(fontNamed: "Chalkduster")
+        label.text = message
+        label.fontSize = 48
+        label.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        label.zPosition = 1
+        addChild(label)
         
+        isUserInteractionEnabled = false
+    }
+    
+    func didBegin(_ contact: SKPhysicsContact) {
         guard let nodeA = contact.bodyA.node else { return }
         guard let nodeB = contact.bodyB.node else { return }
         
